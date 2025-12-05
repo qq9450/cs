@@ -1,13 +1,10 @@
-// brovods.js - 小猫影视 Kitty JS 源
-// by ChatGPT
-
-export default class Brovods {
+export default class CzzyMovie {
   getConfig() {
     return {
-      id: "brovods",
-      name: "博若影视（JS）",
+      id: "czzy",
+      name: "厂长资源 (CZZY)",
       type: 1,
-      api: "https://www.brovods.top/",
+      api: "https://www.czzymovie.com/",
       nsfw: false,
       status: true,
       extra: {
@@ -22,123 +19,72 @@ export default class Brovods {
     };
   }
 
-  // ① 分类
-  async getCategory() {
-    return [
-      { text: "电影", id: "1" },
-      { text: "电视剧", id: "2" },
-      { text: "综艺", id: "3" },
-      { text: "动漫", id: "4" }
-    ];
-  }
-
-  // 获取 HTML 工具
   async _get(url) {
     const res = await $http.get(url);
     return res.data;
   }
 
-  // 解析单个视频卡片
-  _parseVodList(html) {
-    const regex = /<a class="stui-vodlist__thumb.*?href="(.*?)".*?title="(.*?)".*?data-original="(.*?)"/gs;
-    let m;
+  async getCategory() {
+    return [
+      { text: "电影", id: "movie" },
+      { text: "电视剧", id: "tv" },
+      { text: "综艺", id: "variety" },
+      { text: "动漫", id: "anime" }
+    ];
+  }
+
+  _parseList(html) {
+    const regex = /<a href="(\/vod\/[^\"]+)"[^>]*>\s*<img[^>]*data-original="([^"]+)"[^>]*alt="([^"]+)"[^>]*>/g;
     const list = [];
+    let m;
     while ((m = regex.exec(html))) {
-      list.push({
-        id: m[1],
-        title: m[2],
-        cover: m[3],
-        remark: ""
-      });
+      list.push({ id: m[1], title: m[3], cover: m[2], remark: "" });
     }
     return list;
   }
 
-  // ② 首页
   async getHome() {
-    const html = await this._get("https://www.brovods.top/");
-    return this._parseVodList(html);
+    const html = await this._get("https://www.czzymovie.com/");
+    return this._parseList(html);
   }
 
-  // ③ 搜索
   async getSearch(key) {
-    const url = `https://www.brovods.top/index.php/ajax/suggest?mid=1&wd=${encodeURIComponent(
-      key
-    )}`;
-    const res = await $http.get(url);
-    const data = JSON.parse(res.data || "{}");
-
-    if (!data.list) return [];
-
-    return data.list.map((i) => ({
-      id: i.id,
-      title: i.name,
-      cover: i.pic,
-      remark: ""
-    }));
-  }
-
-  // 获取详情页 HTML 并解析播放
-  async getDetail(id) {
-    const url = id.startsWith("http")
-      ? id
-      : `https://www.brovods.top${id}`;
-
-    const html = await this._get(url);
-
-    // 标题
-    const title =
-      html.match(/<h1.*?>(.*?)<\/h1>/)?.[1] || "未知标题";
-
-    // 封面
-    const cover =
-      html.match(/data-original="(.*?)"/)?.[1] || "";
-
-    // 简介
-    const desc =
-      html.match(/<span class="detail-content.*?>([\s\S]*?)<\/span>/)?.[1]
-        ?.trim()
-        ?.replace(/<.*?>/g, "") || "";
-
-    // 播放列表解析
-    const playRegex =
-      /<a\s+class="btn btn-default"\s+href="(.*?)"\s+title="(.*?)"/gs;
-
-    let m;
-    const playlist = [];
-    while ((m = playRegex.exec(html))) {
-      playlist.push({
-        text: m[2],
-        id: "$iframe_" + m[1]
-      });
+    const url = `https://www.czzymovie.com/index.php/ajax/suggest?mid=1&wd=${encodeURIComponent(key)}`;
+    try {
+      const res = await $http.get(url);
+      const data = JSON.parse(res.data || "{}");
+      return (data.list || []).map(i => ({
+        id: i.id,
+        title: i.name,
+        cover: i.pic,
+        remark: ""
+      }));
+    } catch(e) {
+      return [];
     }
-
-    return {
-      id,
-      title,
-      cover,
-      desc,
-      remark: "",
-      playlist: playlist.length
-        ? [{ name: "播放源", urls: playlist }]
-        : []
-    };
   }
 
-  // ⑤ iframe 解析 → 返回真实播放地址
+  async getDetail(id) {
+    const url = id.startsWith("http") ? id : `https://www.czzymovie.com${id}`;
+    const html = await this._get(url);
+    const title = html.match(/<h1.*?>(.*?)<\/h1>/)?.[1] || "";
+    const cover = html.match(/data-original="([^"]+)"/)?.[1] || "";
+    const desc = html.match(/<div class="detail-content">([\s\S]*?)<\/div>/)?.[1]?.replace(/<[^>]+>/g, "") || "";
+    const list = [];
+    const regex = /<a[^>]+href="(\/vod\/play\/\d+-\d+-\d+\.html)"[^>]*>\s*(.*?)\s*<\/a>/g;
+    let m;
+    while ((m = regex.exec(html))) {
+      list.push({ text: m[2], id: "$iframe_" + m[1] });
+    }
+    return { id, title, cover, desc, remark: "", playlist: list.length ? [{ name: "播放源", urls: list }] : [] };
+  }
+
   async parseIframe(url) {
     url = url.replace("$iframe_", "");
-
-    const html = await this._get(url);
-
-    // brovods.top 的播放器通常在 iframe 内，真实地址在 player
-    let real =
-      html.match(/"url":"(.*?)"/)?.[1] ||
-      html.match(/src="(.*?m3u8.*?)"/)?.[1] ||
-      "";
-
-    real = real.replace(/\\/g, "");
-
+    const html = await this._get("https://www.czzymovie.com" + url);
+    const real = html.match(/source\s+src="([^"]+\.m3u8[^"]*)"/)?.[1] ||
+                 html.match(/"file":"([^"]+\.m3u8[^"]*)"/)?.[1] ||
+                 "";
     return real;
   }
 }
